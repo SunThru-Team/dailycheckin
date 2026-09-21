@@ -1,6 +1,6 @@
 'use server';
 import { revalidatePath } from 'next/cache';
-import { editResponse, getEmployeeByToken, setCallback, setTaskStatusForEmployee, type Task } from '@/lib/db';
+import { editResponse, getEmployeeByToken, setCallback, setEmployeeSchedule, setTaskStatusForEmployee, type Task } from '@/lib/db';
 import { ORG_TZ } from '@/lib/env';
 
 async function requireEmployee(token: string) {
@@ -62,4 +62,21 @@ export async function setMyTaskStatusAction(formData: FormData) {
   if (!['open', 'in_progress', 'done'].includes(status)) return;
   await setTaskStatusForEmployee(id, emp.id, status);
   revalidatePath(`/e/${token}`);
+}
+
+function parseSchedule(formData: FormData, dayField = 'days', timeField = 'time') {
+  const days = formData.getAll(dayField).map(Number).filter((d) => Number.isInteger(d) && d >= 0 && d <= 6);
+  const time = String(formData.get(timeField) ?? '');
+  if (!/^\d{2}:\d{2}$/.test(time)) return null;
+  return { days: [...new Set(days)].sort(), time };
+}
+
+export async function saveScheduleAction(_prev: ActionResult | null, formData: FormData): Promise<ActionResult> {
+  const token = String(formData.get('token') ?? '');
+  const emp = await requireEmployee(token);
+  const parsed = parseSchedule(formData);
+  if (!parsed) return { ok: false, error: 'Pick a time.' };
+  await setEmployeeSchedule(emp.id, parsed.days, parsed.time);
+  revalidatePath(`/e/${token}`);
+  return { ok: true, message: parsed.days.length ? 'Schedule saved.' : 'Saved. You won’t be called until you pick at least one day.' };
 }

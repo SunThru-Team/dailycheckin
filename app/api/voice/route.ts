@@ -1,7 +1,7 @@
-// Twilio fetches this when the check-in call connects. Returns TwiML: ask the question, gather speech.
+// Twilio fetches this when the check-in call connects. Returns TwiML: ask the question, start gathering.
 import twilio from 'twilio';
 import { getCall } from '@/lib/db';
-import { CHECKIN_PROMPT, VOICE, formParams, twimlResponse, verifyTwilioRequest } from '@/lib/twilio';
+import { CHECKIN_PROMPT, GATHER_OPTS, VOICE, formParams, twimlResponse, verifyTwilioRequest } from '@/lib/twilio';
 
 export const dynamic = 'force-dynamic';
 const { VoiceResponse } = twilio.twiml;
@@ -26,16 +26,7 @@ export async function POST(req: Request) {
     return twimlResponse(twiml);
   }
 
-  const gather = twiml.gather({
-    input: ['speech'],
-    speechTimeout: 'auto',
-    speechModel: 'phone_call',
-    enhanced: true,
-    timeout: 6,
-    actionOnEmptyResult: true,
-    action: `/api/gather?callId=${callId}&attempt=1`,
-    method: 'POST',
-  });
+  const gather = twiml.gather({ ...GATHER_OPTS, action: `/api/gather?callId=${callId}&seg=1&silent=0` });
   gather.say(VOICE, CHECKIN_PROMPT);
   gather.play({ digits: '1' }); // short tone so "after the tone" means something
   return twimlResponse(twiml);

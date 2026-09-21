@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { isAdminToken } from '@/lib/auth';
 import { listActiveEmployees, listCeoCalls, listResponsesForDate } from '@/lib/db';
-import { fmtDate, fmtTime } from '@/lib/time';
+import { fmtClock, fmtDate, fmtTime } from '@/lib/time';
 
 export const dynamic = 'force-dynamic';
 
@@ -13,7 +13,7 @@ export default async function DayPage({ params }: { params: Promise<{ token: str
   const [responses, employees, briefings] = await Promise.all([
     listResponsesForDate(date), listActiveEmployees(), listCeoCalls(60),
   ]);
-  const briefing = briefings.find((b) => b.call_date === date);
+  const dayBriefings = briefings.filter((b) => b.call_date === date).sort((a, b) => a.slot.localeCompare(b.slot));
   const responded = new Set(responses.map((r) => r.employee_id));
   const missing = employees.filter((e) => !responded.has(e.id));
 
@@ -25,12 +25,12 @@ export default async function DayPage({ params }: { params: Promise<{ token: str
         <p className="who">{responses.length} check-in{responses.length === 1 ? '' : 's'}{missing.length > 0 && <> — no response from {missing.map((e) => e.name).join(', ')}</>}</p>
       </header>
 
-      {briefing && (
-        <section>
-          <div className="briefing-date">Evening briefing{briefing.status ? ` — call ${briefing.status}` : ''}</div>
-          <div className="briefing">{briefing.summary_text}</div>
+      {dayBriefings.map((b) => (
+        <section key={b.id} style={{ marginBottom: '1.5rem' }}>
+          <div className="briefing-date">{fmtClock(b.slot)} briefing{b.status ? ` — call ${b.status}` : ''}</div>
+          <div className="briefing">{b.summary_text}</div>
         </section>
-      )}
+      ))}
 
       <section className="block">
         <h2>Transcripts</h2>

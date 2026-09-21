@@ -1,16 +1,17 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { PriorityChat } from '@/components/PriorityChat';
+import { ScheduleFields } from '@/components/ScheduleFields';
 import {
-  archivePriorityAction, createPriorityAction, createTaskAction, deleteTaskAction,
-  setTaskStatusAction, updatePriorityAction,
+  addCeoScheduleAction, archivePriorityAction, createPriorityAction, createTaskAction, deleteTaskAction,
+  removeCeoScheduleAction, setEmployeeScheduleAction, setTaskStatusAction, updatePriorityAction,
 } from './actions';
 import { isAdminToken } from '@/lib/auth';
 import {
-  getPriorities, getRecentResponses, listActiveEmployees, listCeoCalls, listResponseDates, listTasks,
+  getPriorities, getRecentResponses, listActiveEmployees, listCeoCalls, listCeoSchedules, listResponseDates, listTasks,
 } from '@/lib/db';
 import { matchPrioritiesToUpdates } from '@/lib/match';
-import { fmtDate, orgDate } from '@/lib/time';
+import { DAY_NAMES, fmtClock, fmtDate, fmtDays, orgDate, tzLabel } from '@/lib/time';
 
 export const dynamic = 'force-dynamic';
 
@@ -20,9 +21,10 @@ export default async function ExecPage({ params }: { params: Promise<{ token: st
   const { token } = await params;
   if (!isAdminToken(token)) notFound();
 
-  const [briefings, dates, priorities, tasks, employees, recent] = await Promise.all([
-    listCeoCalls(30), listResponseDates(30), getPriorities(), listTasks(), listActiveEmployees(), getRecentResponses(14),
+  const [briefings, dates, priorities, tasks, employees, recent, ceoSchedules] = await Promise.all([
+    listCeoCalls(30), listResponseDates(30), getPriorities(), listTasks(), listActiveEmployees(), getRecentResponses(14), listCeoSchedules(),
   ]);
+  const tz = tzLabel();
   const today = orgDate();
   const latest = briefings[0];
   const todayCount = dates.find((d) => d.date === today)?.count ?? 0;
@@ -39,7 +41,7 @@ export default async function ExecPage({ params }: { params: Promise<{ token: st
         </p>
         <nav className="jump">
           <a href="#briefing">Briefing</a><a href="#priorities">Priorities</a><a href="#tasks">Tasks</a>
-          <a href="#compare">Priorities vs. reported work</a><a href="#ask">Ask</a><a href="#history">History</a>
+          <a href="#compare">Priorities vs. reported work</a><a href="#ask">Ask</a><a href="#schedule">Schedule</a><a href="#history">History</a>
         </nav>
       </header>
 
@@ -49,7 +51,7 @@ export default async function ExecPage({ params }: { params: Promise<{ token: st
             {latest ? (
               <>
                 <div className="briefing-date">
-                  Briefing for {fmtDate(latest.call_date)}
+                  {fmtClock(latest.slot)} briefing, {fmtDate(latest.call_date)}
                   {latest.status && <> — call {latest.status}</>}
                   {' '}<Link href={`${base}/day/${latest.call_date}`}>transcripts</Link>
                 </div>
@@ -92,11 +94,64 @@ export default async function ExecPage({ params }: { params: Promise<{ token: st
             <PriorityChat token={token} />
           </section>
 
+          <section className="block" id="schedule">
+            <h2>Call schedule <span className="count">{tz}</span></h2>
+            <div className="table-wrap">
+              <table className="sched">
+                <thead>
+                  <tr><th>Employee</th><th>Time</th>{DAY_NAMES.map((d) => <th key={d} style={{ textAlign: 'center' }}>{d}</th>)}<th></th></tr>
+                </thead>
+                <tbody>
+                  {employees.map((e) => (
+                    <tr key={e.id}>
+                      <td>{e.name}</td>
+                      <td>{e.call_days.length ? fmtClock(e.call_time) : <span className="muted">paused</span>}</td>
+                      {DAY_NAMES.map((_, i) => <td key={i} className={`day ${e.call_days.includes(i) ? 'on' : 'off'}`} />)}
+                      <td>
+                        <details className="inline">
+                          <summary>Edit</summary>
+                          <form action={setEmployeeScheduleAction} className="stack" style={{ padding: '.5rem 0' }}>
+                            <input type="hidden" name="token" value={token} />
+                            <input type="hidden" name="employeeId" value={e.id} />
+                            <ScheduleFields days={e.call_days} time={e.call_time} />
+                            <div><button className="primary" type="submit">Save</button></div>
+                          </form>
+                        </details>
+                      </td>
+                    </tr>
+                  ))}
+                  {employees.length === 0 && <tr><td colSpan={10} className="muted">No employees yet.</td></tr>}
+                </tbody>
+              </table>
+            </div>
+            <p className="muted small" style={{ marginTop: '.6rem' }}>Employees can change their own days and time from their dashboard.</p>
+
+            <h3 style={{ marginTop: '1.75rem' }}>Your briefing calls</h3>
+            <p className="muted small">Each slot summarizes the check-ins that have come in since the previous briefing that day.</p>
+            {ceoSchedules.map((s) => (
+              <div key={s.id} className="entry" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem' }}>
+                <div><strong>{fmtClock(s.call_time)}</strong> <span className="muted">{fmtDays(s.days)}</span></div>
+                <form action={removeCeoScheduleAction}>
+                  <input type="hidden" name="token" value={token} />
+                  <input type="hidden" name="id" value={s.id} />
+                  <button className="quiet danger" type="submit">Remove</button>
+                </form>
+              </div>
+            ))}
+            {ceoSchedules.length === 0 && <p className="muted">No briefing calls scheduled. You&apos;ll still see briefings here if you generate them manually.</p>}
+            <form action={addCeoScheduleAction} className="stack panel" style={{ marginTop: '1rem' }}>
+              <input type="hidden" name="token" value={token} />
+              <h3>Add a briefing call</h3>
+              <ScheduleFields days={[1, 2, 3, 4, 5]} time="18:00" />
+              <div><button className="primary" type="submit">Add briefing call</button></div>
+            </form>
+          </section>
+
           <section className="block" id="history">
             <h2>Past briefings <span className="count">{briefings.length}</span></h2>
             {briefings.slice(1).map((b) => (
               <details key={b.id} className="inline entry">
-                <summary>{fmtDate(b.call_date)}{b.status ? ` — call ${b.status}` : ''} </summary>
+                <summary>{fmtDate(b.call_date)}, {fmtClock(b.slot)}{b.status ? ` — call ${b.status}` : ''} </summary>
                 <div className="briefing" style={{ fontSize: '1.05rem' }}>{b.summary_text}</div>
                 <p className="small" style={{ marginTop: '.5rem' }}><Link href={`${base}/day/${b.call_date}`}>Transcripts for this day</Link></p>
               </details>

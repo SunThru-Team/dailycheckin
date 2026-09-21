@@ -2,7 +2,8 @@
 import { revalidatePath } from 'next/cache';
 import { isAdminToken } from '@/lib/auth';
 import {
-  archivePriority, createPriority, createTask, deleteTask, setTaskStatus, updatePriority, type Task,
+  addCeoSchedule, archivePriority, createPriority, createTask, deleteTask, removeCeoSchedule,
+  setEmployeeSchedule, setTaskStatus, updatePriority, type Task,
 } from '@/lib/db';
 
 function requireAdmin(formData: FormData) {
@@ -55,5 +56,33 @@ export async function deleteTaskAction(formData: FormData) {
   const token = requireAdmin(formData);
   const id = num(formData, 'taskId'); if (!id) return;
   await deleteTask(id);
+  revalidatePath(`/x/${token}`);
+}
+
+function parseSchedule(formData: FormData) {
+  const days = [...new Set(formData.getAll('days').map(Number).filter((d) => Number.isInteger(d) && d >= 0 && d <= 6))].sort();
+  const time = String(formData.get('time') ?? '');
+  return /^\d{2}:\d{2}$/.test(time) ? { days, time } : null;
+}
+
+export async function addCeoScheduleAction(formData: FormData) {
+  const token = requireAdmin(formData);
+  const parsed = parseSchedule(formData); if (!parsed || !parsed.days.length) return;
+  await addCeoSchedule(parsed.time, parsed.days);
+  revalidatePath(`/x/${token}`);
+}
+
+export async function removeCeoScheduleAction(formData: FormData) {
+  const token = requireAdmin(formData);
+  const id = num(formData, 'id'); if (!id) return;
+  await removeCeoSchedule(id);
+  revalidatePath(`/x/${token}`);
+}
+
+export async function setEmployeeScheduleAction(formData: FormData) {
+  const token = requireAdmin(formData);
+  const id = num(formData, 'employeeId'); const parsed = parseSchedule(formData);
+  if (!id || !parsed) return;
+  await setEmployeeSchedule(id, parsed.days, parsed.time);
   revalidatePath(`/x/${token}`);
 }

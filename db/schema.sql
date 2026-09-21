@@ -5,6 +5,8 @@ CREATE TABLE IF NOT EXISTS employees (
   email         TEXT,
   access_token  TEXT NOT NULL UNIQUE,      -- random token; employee dashboard lives at /e/<token>
   active        BOOLEAN NOT NULL DEFAULT TRUE,
+  call_days     SMALLINT[] NOT NULL DEFAULT '{1,2,3,4,5}', -- 0=Sun … 6=Sat, org time zone
+  call_time     TIME NOT NULL DEFAULT '08:00',            -- org-local wall clock
   created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
@@ -53,11 +55,24 @@ CREATE TABLE IF NOT EXISTS tasks (
   created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS ceo_schedules (
+  id         SERIAL PRIMARY KEY,
+  call_time  TIME NOT NULL,
+  days       SMALLINT[] NOT NULL DEFAULT '{1,2,3,4,5}',
+  active     BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+INSERT INTO ceo_schedules (call_time, days)
+  SELECT '18:00', '{1,2,3,4,5}' WHERE NOT EXISTS (SELECT 1 FROM ceo_schedules);
+
 CREATE TABLE IF NOT EXISTS ceo_calls (
   id              SERIAL PRIMARY KEY,
-  call_date       DATE NOT NULL UNIQUE,
+  call_date       DATE NOT NULL,
+  slot            TIME NOT NULL DEFAULT '18:00',   -- which scheduled briefing this was
   summary_text    TEXT NOT NULL,
   twilio_call_sid TEXT,
   status          TEXT,
-  created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+  generated_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (call_date, slot)
 );

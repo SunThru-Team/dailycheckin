@@ -67,6 +67,23 @@ export async function placeCeoCall(ceoCallId: number): Promise<string> {
 export const CHECKIN_PROMPT =
   'Hello, this is your daily check-in. In your own words, tell me what you worked on today, ' +
   'whether there were any major blockers, what is still outstanding, and what you need in order ' +
-  'to move forward. Please begin speaking after the tone.';
+  'to move forward. Take as long as you like, and press the pound key when you are finished. ' +
+  'Please begin after the tone.';
+
+/** Shared <Gather> settings for the open-ended answer: speech, plus # to finish. */
+export const GATHER_OPTS = {
+  input: ['speech', 'dtmf'] as ('speech' | 'dtmf')[],
+  speechTimeout: 'auto',
+  speechModel: 'phone_call' as const,
+  enhanced: true,
+  timeout: 8,
+  numDigits: 1,
+  finishOnKey: '',          // so pressing # arrives as Digits="#" instead of silently ending
+  actionOnEmptyResult: true,
+  method: 'POST' as const,
+};
+/** Hard ceilings so a stuck line can't talk forever. */
+export const MAX_SEGMENTS = 30;
+export const MAX_SILENT_SEGMENTS = 2;
 
 export const VOICE = { voice: 'Polly.Joanna-Neural' as const, language: 'en-US' as const };

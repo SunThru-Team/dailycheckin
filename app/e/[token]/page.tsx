@@ -1,13 +1,14 @@
 import { notFound } from 'next/navigation';
 import { EditWindow } from '@/components/EditWindow';
 import { RescheduleForm } from '@/components/RescheduleForm';
+import { ScheduleForm } from '@/components/ScheduleForm';
 import { setMyTaskStatusAction } from './actions';
 import {
   getEmployeeByToken, listMissedCallsNeedingAction, listPendingCallbacks,
   listResponsesForEmployee, listTasksForEmployee,
 } from '@/lib/db';
 import { ORG_TZ } from '@/lib/env';
-import { fmtDate, fmtDateTime } from '@/lib/time';
+import { fmtClock, fmtDate, fmtDateTime, fmtDays, tzLabel } from '@/lib/time';
 
 export const dynamic = 'force-dynamic';
 
@@ -32,39 +33,40 @@ export default async function EmployeePage({ params }: { params: Promise<{ token
   const now = Date.now();
   const latest = responses[0];
   const latestEditable = latest && new Date(latest.edit_locked_at).getTime() > now;
-  const tzLabel = new Intl.DateTimeFormat('en-US', { timeZone: ORG_TZ, timeZoneName: 'short' })
-    .formatToParts(new Date()).find((p) => p.type === 'timeZoneName')?.value ?? ORG_TZ;
+  const tz = tzLabel();
 
   return (
     <main className="page">
       <header className="top">
         <h1>{emp.name}</h1>
-        <p className="who">Your daily check-ins</p>
+        <p className="who">
+          {emp.call_days.length
+            ? <>We call you at {fmtClock(emp.call_time)}, {fmtDays(emp.call_days).toLowerCase()}.</>
+            : <>Your check-in calls are paused.</>}{' '}
+          <a href="#schedule">Change</a>
+        </p>
       </header>
 
       {missed.length > 0 && (
-        <section className="block" style={{ marginTop: 0 }}>
-          <h2>Missed calls</h2>
+        <section style={{ marginBottom: '2rem' }}>
           {missed.map((c) => (
             <div key={c.id} className="notice">
               <p><strong>We couldn&apos;t reach you {fmtDateTime(c.scheduled_at)}.</strong> Pick a time and we&apos;ll call again.</p>
               <RescheduleForm token={token} callId={c.id}
                 minLocal={localInputValue(new Date(now + 15 * 60000))}
                 maxLocal={localInputValue(new Date(now + 3 * 86400000))}
-                tzLabel={tzLabel} />
+                tzLabel={tz} />
             </div>
           ))}
         </section>
       )}
 
       {pending.map((c) => (
-        <div key={c.id} className="notice ok">
-          A callback is scheduled for {fmtDateTime(c.scheduled_callback_at!)}.
-        </div>
+        <div key={c.id} className="notice ok">A callback is scheduled for {fmtDateTime(c.scheduled_callback_at!)}.</div>
       ))}
 
       {latestEditable && (
-        <section className="block" style={{ marginTop: missed.length ? undefined : 0 }}>
+        <section style={{ marginBottom: '2rem' }}>
           <h2>Today&apos;s update</h2>
           <div className="panel">
             <p className="muted small">Recorded {fmtDateTime(latest.submitted_at)}</p>
@@ -74,7 +76,7 @@ export default async function EmployeePage({ params }: { params: Promise<{ token
         </section>
       )}
 
-      <section className="block">
+      <section className="block" id="tasks">
         <h2>Your tasks <span className="count">{tasks.filter((t) => t.status !== 'done').length} open</span></h2>
         {tasks.length === 0 && <p className="muted">Nothing has been assigned to you yet.</p>}
         {tasks.map((t) => (
@@ -96,9 +98,16 @@ export default async function EmployeePage({ params }: { params: Promise<{ token
         ))}
       </section>
 
+      <section className="block" id="schedule">
+        <h2>Your call schedule</h2>
+        <div className="panel">
+          <ScheduleForm token={token} days={emp.call_days} time={emp.call_time} tz={tz} />
+        </div>
+      </section>
+
       <section className="block">
         <h2>Past updates <span className="count">{responses.length}</span></h2>
-        {responses.length === 0 && <p className="muted">No check-ins recorded yet. Your first call comes the next weekday morning.</p>}
+        {responses.length === 0 && <p className="muted">No check-ins recorded yet. Your first call comes at your next scheduled time.</p>}
         {responses.filter((r) => !(latestEditable && r.id === latest.id)).map((r) => (
           <div key={r.id} className="entry">
             <div className="meta">
