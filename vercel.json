@@ -1,0 +1,7 @@
+{
+  "crons": [
+    { "path": "/api/cron/daily-checkin-calls", "schedule": "0 12 * * 1-5" },
+    { "path": "/api/cron/ceo-summary-call",   "schedule": "0 22 * * 1-5" },
+    { "path": "/api/cron/process-callbacks",  "schedule": "0 * * * *" }
+  ]
+}
