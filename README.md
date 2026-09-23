@@ -81,32 +81,63 @@ The connector lets John work from his own Claude chat instead of the dashboard: 
 briefing", "what is Jeremy working on", "create a task for Jeremy and release it to him". It reads
 and writes the same Neon database the dashboard uses.
 
+### Why there is an OAuth server in here
+
+Claude's custom-connector flow has no "this server needs no auth" option. When you add a URL it
+immediately attempts OAuth Dynamic Client Registration; a server with no OAuth endpoints returns
+404s and you get *"Couldn't register with … 's sign-in service"*. The server can be perfectly
+healthy and still fail, because it is never reached.
+
+So this app ships a minimal OAuth 2.1 authorization server (`lib/oauth.ts`, `app/api/oauth/*`,
+`app/.well-known/*`). There are no user accounts — "signing in" is typing `MCP_SECRET` on a page
+this app serves. Nothing is stored except spent authorization codes: every credential is an
+HMAC-signed blob carrying its own contents and expiry, so serverless functions need no shared memory.
+
 ### One-time setup
 
-**1. Create the secret.** In a terminal:
+**1. Create the secret.**
 
     openssl rand -hex 32
 
-**2. Add it to Vercel.** Project → Settings → Environment Variables → Add:
+**2. Add it to Vercel.** Settings → Environment Variables:
 
     MCP_SECRET = <the string you just generated>
 
-Then Deployments → the latest one → ⋯ → Redeploy. Environment variables only take effect on a new build.
+Then redeploy. Environment variables are only picked up by a new build, and this is the single most
+common reason the connector "mysteriously" keeps failing.
 
-**3. Add the connector in Claude.** In Claude: Settings → Connectors → Add custom connector.
-Paste this as the URL, with your secret on the end:
+**3. Run migration `004_oauth_codes.sql`** in Neon (one small table, used to make authorization
+codes single-use).
 
-    https://dailycheckin-seven.vercel.app/api/mcp/<MCP_SECRET>
+**4. Check the server before touching the Claude UI.** Expect `201`:
 
-Name it something like "SunThru". Claude will connect and list the available tools.
+    curl -si -X POST https://dailycheckin-seven.vercel.app/api/oauth/register \
+      -H 'Content-Type: application/json' \
+      -d '{"redirect_uris":["https://claude.ai/api/mcp/auth_callback"]}' | head -1
 
-That URL *is* the password, so treat it like one: don't paste it into a shared channel, a ticket, or a
-chat with anyone else. Any other URL under `/api/mcp/` returns a plain 404.
+If that returns 500, the JSON body says why — most likely `MCP_SECRET` is unset.
+
+**5. Add the connector in Claude.** Settings → Connectors → Add custom connector. URL:
+
+    https://dailycheckin-seven.vercel.app/api/mcp
+
+Leave the OAuth Client ID and Secret fields under Advanced settings **blank** — registration is
+dynamic. Click Connect, and a SunThru sign-in page appears; enter `MCP_SECRET` there.
+
+Note the URL no longer contains the secret. The secret is what you type on the sign-in page.
+
+### Other clients
+
+Claude Code and Claude Desktop support custom headers, so they can skip the OAuth dance:
+
+    claude mcp add --transport http sunthru https://dailycheckin-seven.vercel.app/api/mcp \
+      --header "Authorization: Bearer <MCP_SECRET>"
 
 ### Rotating the secret
 
-Generate a new one, update `MCP_SECRET` in Vercel, redeploy, then edit the connector in Claude and
-paste the new URL. The old URL stops working the moment the redeploy finishes.
+Change `MCP_SECRET` in Vercel and redeploy. Every issued token, refresh token and registered client
+is invalidated immediately, because the signing key is derived from the secret. Then remove the
+connector in Claude and add it again.
 
 ### Five things to try
 
