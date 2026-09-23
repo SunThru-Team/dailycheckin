@@ -4,7 +4,7 @@
 import { isCronAuthorized } from '@/lib/auth';
 import { runBriefing } from '@/lib/briefing';
 import {
-  ceoCallExists, clearCallback, createCall, hasCallToday, listActiveEmployees, listCeoSchedules,
+  ceoCallExists, clearCallback, createCall, hasCallToday, listCallableEmployees, listCeoSchedules,
   listDueCallbacks, markCallFailed, setCallSid,
 } from '@/lib/db';
 import { orgNow, timeToMinutes } from '@/lib/time';
@@ -27,7 +27,7 @@ export async function GET(req: Request) {
   const log: string[] = [];
 
   // 1. Employee check-ins due now
-  const employees = await listActiveEmployees();
+  const employees = await listCallableEmployees(); // never the CEO
   for (const e of employees) {
     if (!e.call_days.includes(now.dow) || !isDue(e.call_time, now.minutes)) continue;
     if (await hasCallToday(e.id, now.date)) continue;
@@ -63,8 +63,9 @@ export async function GET(req: Request) {
     if (!s.days.includes(now.dow) || !isDue(s.call_time, now.minutes)) continue;
     if (await ceoCallExists(now.date, s.call_time)) continue;
     try {
-      const r = await runBriefing(now.date, s.call_time, { call: true });
-      log.push(`CEO briefing ${s.call_time}: ${r.called ? `dialed (${r.sid})` : `not called: ${'error' in r ? r.error : ''}`}`);
+        const r = await runBriefing(now.date, s.call_time, { call: s.briefing_call_enabled });
+      log.push(`CEO briefing ${s.call_time}: ${r.called ? `dialed (${r.sid})`
+        : s.briefing_call_enabled ? `not called: ${'error' in r ? r.error : ''}` : 'generated (calls off)'}`);
     } catch (err) {
       // e.g. the summary model is unreachable; the slot stays open so the next tick retries within the grace window.
       log.push(`CEO briefing ${s.call_time}: failed: ${(err as Error).message}`);

@@ -1,7 +1,7 @@
 // Generate (and optionally place) a CEO briefing for a given org date and schedule slot.
 import { generateDailySummary } from './ai';
 import {
-  latestCeoCallOn, listActiveEmployees, listResponsesForDate, listResponsesSince, setCeoCallSid, upsertCeoCall,
+  latestCeoCallOn, listCallableEmployees, listResponsesForDate, listResponsesSince, setCeoCallSid, upsertCeoCall,
 } from './db';
 import { fmtClock, fmtDate } from './time';
 import { placeCeoCall } from './twilio';
@@ -13,7 +13,7 @@ export async function runBriefing(dateISO: string, slot: string, opts: { call: b
   const allToday = previous ? await listResponsesForDate(dateISO) : responses;
 
   const responded = new Set(allToday.map((r) => r.employee_id));
-  const missed = (await listActiveEmployees()).filter((e) => !responded.has(e.id)).map((e) => e.name);
+  const missed = (await listCallableEmployees()).filter((e) => !responded.has(e.id)).map((e) => e.name);
 
   const label = `${fmtDate(dateISO)}${previous ? `, since the ${fmtClock(previous.slot)} briefing` : ''}`;
   const summary = await generateDailySummary(

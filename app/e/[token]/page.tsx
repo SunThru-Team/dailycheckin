@@ -1,14 +1,12 @@
 import { notFound } from 'next/navigation';
-import { EditWindow } from '@/components/EditWindow';
 import { RescheduleForm } from '@/components/RescheduleForm';
 import { ScheduleForm } from '@/components/ScheduleForm';
-import { setMyTaskStatusAction } from './actions';
-import {
-  getEmployeeByToken, listMissedCallsNeedingAction, listPendingCallbacks,
-  listResponsesForEmployee, listTasksForEmployee,
-} from '@/lib/db';
+import { EmployeeTask } from '@/components/TaskNotes';
+import { getEmployeeByToken, listMissedCallsNeedingAction, listPendingCallbacks, listResponsesForEmployee } from '@/lib/db';
+import { viewerFor } from '@/lib/access';
+import { latestPublishedNote, listNotesVisible, listTasksVisible } from '@/lib/tasks';
 import { ORG_TZ } from '@/lib/env';
-import { fmtClock, fmtDate, fmtDateTime, fmtDays, tzLabel } from '@/lib/time';
+import { fmtClock, fmtDateTime, fmtDays, tzLabel } from '@/lib/time';
 
 export const dynamic = 'force-dynamic';
 
@@ -19,21 +17,23 @@ function localInputValue(d: Date): string {
   return `${g('year')}-${g('month')}-${g('day')}T${g('hour') === '24' ? '00' : g('hour')}:${g('minute')}`;
 }
 
-const TASK_LABEL: Record<string, string> = { open: 'Open', in_progress: 'In progress', done: 'Done' };
-
 export default async function EmployeePage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
   const emp = await getEmployeeByToken(token);
   if (!emp) notFound();
 
-  const [responses, missed, pending, tasks] = await Promise.all([
+  const viewer = viewerFor(emp);
+  const [responses, missed, pending, tasks, note] = await Promise.all([
     listResponsesForEmployee(emp.id), listMissedCallsNeedingAction(emp.id),
-    listPendingCallbacks(emp.id), listTasksForEmployee(emp.id),
+    listPendingCallbacks(emp.id), listTasksVisible(viewer, { assignedTo: emp.id }), latestPublishedNote(emp.id),
   ]);
+  // Notes are fetched through the same visibility filter as the tasks themselves.
+  const notesByTask = new Map(await Promise.all(
+    tasks.map(async (t) => [t.id, await listNotesVisible(viewer, t.id)] as const),
+  ));
   const now = Date.now();
-  const latest = responses[0];
-  const latestEditable = latest && new Date(latest.edit_locked_at).getTime() > now;
   const tz = tzLabel();
+  const openCount = tasks.filter((t) => t.status !== 'done').length;
 
   return (
     <main className="page">
@@ -46,6 +46,13 @@ export default async function EmployeePage({ params }: { params: Promise<{ token
           <a href="#schedule">Change</a>
         </p>
       </header>
+
+      {note && (
+        <section className="from-john">
+          <h2>From John</h2>
+          <p className="briefing" style={{ fontSize: '1.15rem' }}>{note.body}</p>
+        </section>
+      )}
 
       {missed.length > 0 && (
         <section style={{ marginBottom: '2rem' }}>
@@ -65,37 +72,10 @@ export default async function EmployeePage({ params }: { params: Promise<{ token
         <div key={c.id} className="notice ok">A callback is scheduled for {fmtDateTime(c.scheduled_callback_at!)}.</div>
       ))}
 
-      {latestEditable && (
-        <section style={{ marginBottom: '2rem' }}>
-          <h2>Today&apos;s update</h2>
-          <div className="panel">
-            <p className="muted small">Recorded {fmtDateTime(latest.submitted_at)}</p>
-            <EditWindow token={token} responseId={latest.id} transcript={latest.transcript}
-              lockedAtISO={new Date(latest.edit_locked_at).toISOString()} />
-          </div>
-        </section>
-      )}
-
       <section className="block" id="tasks">
-        <h2>Your tasks <span className="count">{tasks.filter((t) => t.status !== 'done').length} open</span></h2>
+        <h2>Your tasks <span className="count">{openCount} open</span></h2>
         {tasks.length === 0 && <p className="muted">Nothing has been assigned to you yet.</p>}
-        {tasks.map((t) => (
-          <div key={t.id} className="entry">
-            <div className="meta">
-              {t.priority_title && <span>Priority: {t.priority_title}</span>}
-              {t.due_date && <span>Due {fmtDate(t.due_date)}</span>}
-              <span className={`chip ${t.status === 'done' ? 'ok' : t.status === 'in_progress' ? 'accent' : ''}`}>{TASK_LABEL[t.status]}</span>
-            </div>
-            <div className="body">{t.description}</div>
-            <form action={setMyTaskStatusAction} className="actions">
-              <input type="hidden" name="token" value={token} />
-              <input type="hidden" name="taskId" value={t.id} />
-              {(['open', 'in_progress', 'done'] as const).filter((s) => s !== t.status).map((s) => (
-                <button key={s} className="quiet" name="status" value={s} type="submit">Mark {TASK_LABEL[s].toLowerCase()}</button>
-              ))}
-            </form>
-          </div>
-        ))}
+        {tasks.map((t) => <EmployeeTask key={t.id} token={token} task={t} notes={notesByTask.get(t.id) ?? []} />)}
       </section>
 
       <section className="block" id="schedule">
@@ -106,14 +86,12 @@ export default async function EmployeePage({ params }: { params: Promise<{ token
       </section>
 
       <section className="block">
-        <h2>Past updates <span className="count">{responses.length}</span></h2>
+        <h2>Your check-ins <span className="count">{responses.length}</span></h2>
+        <p className="muted small">These are recorded as spoken and can&apos;t be edited.</p>
         {responses.length === 0 && <p className="muted">No check-ins recorded yet. Your first call comes at your next scheduled time.</p>}
-        {responses.filter((r) => !(latestEditable && r.id === latest.id)).map((r) => (
+        {responses.map((r) => (
           <div key={r.id} className="entry">
-            <div className="meta">
-              <span>{fmtDateTime(r.submitted_at)}</span>
-              {r.edited_at && <span>edited</span>}
-            </div>
+            <div className="meta"><span>{fmtDateTime(r.submitted_at)}</span></div>
             <div className="body">{r.transcript}</div>
           </div>
         ))}

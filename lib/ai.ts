@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
-import type { Priority, ResponseWithName, Task } from './db';
+import type { ResponseWithName } from './db';
+import type { PriorityRow, TaskRow } from './tasks';
 
 const MODEL = 'claude-sonnet-4-6';
 let _client: Anthropic | undefined;
@@ -44,15 +45,15 @@ export type ChatTurn = { role: 'user' | 'assistant'; content: string };
 /** Priorities chatbot: answers a question with priorities + trailing 14 days of updates in context. */
 export async function answerPriorityQuestion(
   history: ChatTurn[],
-  priorities: Priority[],
-  tasks: Task[],
+  priorities: PriorityRow[],
+  tasks: TaskRow[],
   recent: ResponseWithName[],
 ): Promise<string> {
   const prioritiesText = priorities.length
-    ? priorities.map((p) => `- [#${p.id}] ${p.title}${p.deadline ? ` (deadline ${p.deadline})` : ''}${p.description ? ` — ${p.description}` : ''}`).join('\n')
+    ? priorities.map((p) => `${p.rank}. ${p.title}${p.deadline ? ` (deadline ${p.deadline})` : ''}${p.description ? ` — ${p.description}` : ''}`).join('\n')
     : '(none set)';
   const tasksText = tasks.length
-    ? tasks.map((t) => `- ${t.description} → ${t.assignee_name ?? 'unassigned'} [${t.status}]${t.priority_title ? ` under "${t.priority_title}"` : ''}${t.due_date ? `, due ${t.due_date}` : ''}`).join('\n')
+    ? tasks.map((t) => `- ${t.title} → ${t.assignee_name ?? 'unassigned'} [${t.status}]${t.priority_title ? ` under "${t.priority_title}"` : ''}${t.due_date ? `, due ${t.due_date}` : ''}`).join('\n')
     : '(none)';
   const updatesText = recent.length
     ? recent.map((r) => `${r.employee_name} (${r.date}): ${r.transcript}`).join('\n')

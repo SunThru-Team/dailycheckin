@@ -1,7 +1,8 @@
 // Executive chat: POST { token, messages: [{role, content}] } -> { answer }
 import { isAdminToken } from '@/lib/auth';
 import { answerPriorityQuestion, type ChatTurn } from '@/lib/ai';
-import { getPriorities, getRecentResponses, listTasks } from '@/lib/db';
+import { getRecentResponses } from '@/lib/db';
+import { listPriorities, listTasksVisible } from '@/lib/tasks';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -17,7 +18,10 @@ export async function POST(req: Request) {
     return Response.json({ error: 'Last message must be from the user.' }, { status: 400 });
   }
 
-  const [priorities, tasks, recent] = await Promise.all([getPriorities(), listTasks(), getRecentResponses(14)]);
+  // The chat runs as the CEO: the admin token is required above.
+  const [priorities, tasks, recent] = await Promise.all([
+    listPriorities(), listTasksVisible({ kind: 'ceo' }), getRecentResponses(14),
+  ]);
   const answer = await answerPriorityQuestion(messages, priorities, tasks, recent);
   return Response.json({ answer });
 }

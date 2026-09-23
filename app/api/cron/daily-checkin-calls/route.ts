@@ -1,5 +1,5 @@
 // 8am ET on weekdays: create a calls row for each active employee and dial them.
-import { createCall, hasCallToday, listActiveEmployees, markCallFailed, setCallSid } from '@/lib/db';
+import { createCall, hasCallToday, listCallableEmployees, markCallFailed, setCallSid } from '@/lib/db';
 import { isCronAuthorized } from '@/lib/auth';
 import { isWeekday, orgDate } from '@/lib/time';
 import { placeCheckinCall } from '@/lib/twilio';
@@ -14,7 +14,7 @@ export async function GET(req: Request) {
   }
 
   const today = orgDate();
-  const employees = await listActiveEmployees();
+  const employees = await listCallableEmployees();
   const results: Record<string, string> = {};
 
   for (const e of employees) {
